@@ -55,6 +55,8 @@ public class FlashbackConfig {
 
     public boolean cjson = false;
 
+    public int[] maxchunkrender = new int[]{0};
+
     public boolean etjson = false;
 
     @OptionCaption("flashback.option.hide_pause_menu_controls")

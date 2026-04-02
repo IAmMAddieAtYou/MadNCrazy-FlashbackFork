@@ -4,8 +4,8 @@
   "plugin": "com.moulberry.mixinconstraints.ConstraintsMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "visuals.MixinMainTarget",
     "MixinAbstractClientPlayer",
+    "MixinClientChunkCache",
     "MixinDebugScreenOverlay",
     "MixinLevelRenderer",
     "MixinMinecraft",
@@ -46,6 +46,7 @@
     "visuals.MixinLightTexture",
     "visuals.MixinLivingEntityRenderer",
     "visuals.MixinLoadingOverlay",
+    "visuals.MixinMainTarget",
     "visuals.MixinMouseHandler",
     "visuals.MixinOptions",
     "visuals.MixinParticleEngine",

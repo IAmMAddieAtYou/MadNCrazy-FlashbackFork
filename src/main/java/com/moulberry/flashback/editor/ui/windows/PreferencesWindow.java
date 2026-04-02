@@ -82,6 +82,11 @@ public class PreferencesWindow {
                 ImGui.setNextItemWidth(ReplayUI.scaleUi(200));
                 ImGui.sliderInt("Dummy Render Frames", config.exportRenderDummyFrames, 0, 100);
                 ImGuiHelper.tooltip("This will make the exporter render extra dummy frames before saving a frame.\nThis will DRASTICALLY increase the time it takes to export, but may be necessary when using shaders that rely on temporal accumulation or mods which lack support for FREX Flawless Frames");
+
+
+                ImGui.setNextItemWidth(ReplayUI.scaleUi(200));
+                ImGui.sliderInt("Protected Chunk Radius", config.maxchunkrender, 0, 100);
+                ImGuiHelper.tooltip("Prevents chunks within this radius of the camera from unloading during an export to fix background popping.\n\nWARNING: Setting this too high on a moving camera shot will cause the game to run out of RAM and crash.");
             }
 
             ImGuiHelper.endPopupModalCloseable();
