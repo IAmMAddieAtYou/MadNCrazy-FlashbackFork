@@ -7,6 +7,7 @@ import com.moulberry.flashback.FilePlayerSkin;
 import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.Utils;
 import com.moulberry.flashback.combo_options.GlowingOverride;
+import com.moulberry.flashback.compat.WildfireMenuIntegration;
 import com.moulberry.flashback.editor.ui.ImGuiHelper;
 import com.moulberry.flashback.editor.ui.ReplayUI;
 import com.moulberry.flashback.exporting.AsyncFileDialogs;
@@ -22,6 +23,9 @@ import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.scores.DisplaySlot;
@@ -96,9 +100,14 @@ public class SelectedEntityPopup {
             editorState.markDirty();
         }
 
+
+
+
         if (ImGui.button("Open Track Entity")) {
             showTrackEntityWindow = !showTrackEntityWindow;
         }
+
+
 
 
         if (showTrackEntityWindow) {
@@ -115,6 +124,7 @@ public class SelectedEntityPopup {
                 }
                 ImGui.endCombo();
             }
+
 
 
 
@@ -277,9 +287,56 @@ public class SelectedEntityPopup {
                             String folder = original.getParent();
                             String newName = "depth" + original.getName();
                             String depthPath = new File(folder, newName).getAbsolutePath();
+
+
                             editorState.depthSkinOverrideFromFile.put(entity.getUUID(), new FilePlayerSkin(depthPath));
                         }
                     });
+                }
+
+                boolean isValidSkin = false;
+                UUID entityId = entity.getUUID();
+
+// 1. Check if the map contains the key
+                if (editorState.depthSkinOverrideFromFile.containsKey(entityId)) {
+                    FilePlayerSkin skinObj = editorState.depthSkinOverrideFromFile.get(entityId);
+
+                    if (skinObj == null) {
+                        //System.err.println("[DEBUG] Entity " + entityId + " has a key in the map, but the FilePlayerSkin object is NULL!");
+                    } else if (skinObj.getSkin() == null) {
+                        //System.err.println("[DEBUG] FilePlayerSkin found, but getSkin() is NULL for entity: " + entityId);
+                    } else if (skinObj.getSkin().texture() == null) {
+                        //System.err.println("[DEBUG] Skin found, but texture() is NULL for entity: " + entityId);
+                    } else {
+                        // 2. Safe navigation successful
+                        String skinPathStr = skinObj.getPath();
+
+                        if (skinPathStr == null || skinPathStr.trim().isEmpty()) {
+                            //System.err.println("[DEBUG] Texture path is null or empty for entity: " + entityId);
+                        } else {
+                            // 3. Final Physical File Check
+                            java.nio.file.Path path = java.nio.file.Path.of(skinPathStr);
+                            isValidSkin = java.nio.file.Files.exists(path);
+
+                            if (!isValidSkin) {
+                                // Only log this once in a while or on change to avoid spamming
+                                //System.out.println("[DEBUG] Path exists in memory but NOT on disk: " + skinPathStr);
+                            }
+                        }
+                    }
+                } else {
+                    // Optional: Log if you expected a skin to be there but it wasn't
+                    // System.out.println("[DEBUG] No depth skin override found for: " + entityId);
+                }
+
+// 4. Display the result in ImGui
+                if (isValidSkin) {
+                    ImGui.textColored(0.0f, 1.0f, 0.0f, 1.0f, "Depth Skin: Valid");
+                    if (ImGui.isItemHovered()) {
+                        ImGui.setTooltip("Path: " + editorState.depthSkinOverrideFromFile.get(entityId).getSkin().texture().getPath());
+                    }
+                } else {
+                    ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "Depth Skin: Not Found");
                 }
 
                 if (editorState.skinOverride.containsKey(entity.getUUID()) || editorState.skinOverrideFromFile.containsKey(entity.getUUID()) || editorState.depthSkinOverrideFromFile.containsKey(entity.getUUID())) {
@@ -292,6 +349,46 @@ public class SelectedEntityPopup {
                 }
             } else {
                 showGlowingDropdown(entity, editorState);
+            }
+
+
+            ImGui.separator();
+            ImGui.textDisabled("Extra Settings");
+
+// The scale attribute only exists on LivingEntities (players, mobs, armor stands)
+            if (entity instanceof LivingEntity livingEntity) {
+                AttributeInstance scaleAttribute = livingEntity.getAttribute(Attributes.SCALE);
+
+                if (scaleAttribute != null) {
+                    // Grab the current scale (default is usually 1.0)
+                    float[] currentScale = { (float) scaleAttribute.getBaseValue() };
+
+                    // dragFloat parameters: Label, value array, drag speed, min value, max value
+                    if (ImGui.dragFloat("Entity Scale", currentScale, 0.05f, 0.1f, 20.0f)) {
+                        // 1. Update the live entity so you can see it change immediately
+                        scaleAttribute.setBaseValue(currentScale[0]);
+
+                        // 2. Save it to the Flashback project state permanently
+                        editorState.customEntityScales.put(entity.getUUID(), currentScale[0]);
+                        editorState.markDirty();
+                    }
+
+                    ImGui.sameLine();
+                    if (ImGui.button("Reset Scale")) {
+                        scaleAttribute.setBaseValue(1.0f);
+                        editorState.customEntityScales.remove(entity.getUUID());
+                        editorState.markDirty();
+                    }
+                }
+            }
+
+
+            if (net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("wildfire_gender")) {
+                if (entity instanceof net.minecraft.world.entity.LivingEntity livingEntity) {
+                    // Delegate to a completely separate class.
+                    // DO NOT put any Wildfire imports at the top of this current file.
+                    WildfireMenuIntegration.renderWildfireMenu(livingEntity);
+                }
             }
         }
 

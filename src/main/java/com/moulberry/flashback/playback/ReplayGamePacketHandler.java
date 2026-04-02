@@ -59,6 +59,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeMap;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.Painting;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -171,6 +172,15 @@ public class ReplayGamePacketHandler implements ClientGamePacketListener {
 
             ((ServerLevelExt) level).flashback$setCanSpawnEntities(true);
             try {
+                if (pendingEntity instanceof LivingEntity livingEntity) {
+                    var customScales = this.replayServer.getEditorState().customEntityScales;
+                    if (customScales != null && customScales.containsKey(livingEntity.getUUID())) {
+                        AttributeInstance scaleAttr = livingEntity.getAttribute(Attributes.SCALE);
+                        if (scaleAttr != null) {
+                            scaleAttr.setBaseValue(customScales.get(livingEntity.getUUID()));
+                        }
+                    }
+                }
                 level.addFreshEntity(pendingEntity);
                 ChunkPos chunkPos = new ChunkPos(pendingEntity.blockPosition());
                 level.getChunkSource().addRegionTicket(ReplayServer.ENTITY_LOAD_TICKET, chunkPos, 3, chunkPos);
@@ -1236,6 +1246,13 @@ public class ReplayGamePacketHandler implements ClientGamePacketListener {
                 attributeInstance.removeModifiers();
                 for (AttributeModifier modifier : snapshot.modifiers()) {
                     attributeInstance.addTransientModifier(modifier);
+                }
+            }
+            var customScales = this.replayServer.getEditorState().customEntityScales;
+            if (customScales != null && customScales.containsKey(livingEntity.getUUID())) {
+                AttributeInstance scaleAttr = livingEntity.getAttribute(Attributes.SCALE);
+                if (scaleAttr != null) {
+                    scaleAttr.setBaseValue(customScales.get(livingEntity.getUUID()));
                 }
             }
         }

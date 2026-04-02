@@ -109,7 +109,7 @@ public abstract class MixinLevelRenderer {
     @Inject(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;renderSectionLayer(Lnet/minecraft/client/renderer/RenderType;DDDLorg/joml/Matrix4f;Lorg/joml/Matrix4f;)V", ordinal = 2, shift = At.Shift.AFTER), require = 0)
     public void renderLevel_AfterTerrain(DeltaTracker deltaTracker, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, Matrix4f matrix4f, Matrix4f matrix4f2, CallbackInfo ci) {
         if (Flashback.isExporting() && Flashback.getConfig().depthinfo == DEPTHVISUALS.LEVELS) {
-            captureDepthFrame();
+            captureDepthFrame(matrix4f2);
         }
     }
 
@@ -117,14 +117,15 @@ public abstract class MixinLevelRenderer {
     public void renderLevel_AfterEntities(DeltaTracker deltaTracker, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, Matrix4f matrix4f, Matrix4f matrix4f2, CallbackInfo ci) {
         // This includes BOTH Mobs and Players.
         if (Flashback.isExporting() && (Flashback.getConfig().depthinfo == DEPTHVISUALS.ENTITIES)) {
-            captureDepthFrame();
+            captureDepthFrame(matrix4f2);
         }
     }
 
     @Inject(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/FogRenderer;setupNoFog()V"), require = 0)
-    public void renderLevel_Final(DeltaTracker deltaTracker, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, Matrix4f matrix4f, Matrix4f matrix4f2, CallbackInfo ci) {
+    public void renderLevel_Final(DeltaTracker deltaTracker, boolean bl, Camera camera, GameRenderer gameRenderer, LightTexture lightTexture, Matrix4f matrix4f, Matrix4f projectionMatrix, CallbackInfo ci) {
         if (Flashback.isExporting() && (Flashback.getConfig().depthinfo == DEPTHVISUALS.PARTICLES)) {
-            captureDepthFrame();
+            // Pass the projection matrix directly
+            captureDepthFrame(projectionMatrix);
         }
     }
 

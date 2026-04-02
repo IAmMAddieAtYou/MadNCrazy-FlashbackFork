@@ -16,10 +16,9 @@ public class PerfectFrames {
 
     private static boolean isEnabled = false;
     static List<Consumer<Boolean>> frexFlawlessFrames = new ArrayList<>();
-    public static Matrix4f worldMatrix = new Matrix4f();
-    private static final Set<UUID> ignoreSkinLoading = new HashSet<>();
-
     private static volatile boolean captureDepth = false;
+    private static final Set<UUID> ignoreSkinLoading = new HashSet<>();
+    public static Matrix4f worldMatrix = new Matrix4f();
 
     public static void setCaptureDepth(boolean state) {
         captureDepth = state;

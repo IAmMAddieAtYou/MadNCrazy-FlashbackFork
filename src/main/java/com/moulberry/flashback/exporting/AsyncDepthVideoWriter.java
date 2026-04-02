@@ -125,22 +125,28 @@ public class AsyncDepthVideoWriter implements AutoCloseable {
         buf.putInt(8);                            // Offset to first IFD (immediately after header)
 
         // IFD (Image File Directory)
-        int numEntries = 9;
+        int numEntries = 10; // CRITICAL FIX: Changed from 9 to 10
         buf.putShort((short) numEntries);
 
-        // Tags must be sorted by ID!
+        // Tags MUST be sorted by Tag ID ascending!
         writeTag(buf, 256, 4, 1, width);          // ImageWidth
         writeTag(buf, 257, 4, 1, height);         // ImageHeight
         writeTag(buf, 258, 3, 1, 32);             // BitsPerSample: 32
         writeTag(buf, 259, 3, 1, 1);              // Compression: 1 (None)
         writeTag(buf, 262, 3, 1, 1);              // PhotometricInterpretation: 1 (BlackIsZero)
-        writeTag(buf, 273, 4, 1, 8 + 2 + (numEntries * 12) + 4); // StripOffsets (Header + IFD Size)
+
+        // StripOffsets: Header(8) + IFD Count(2) + Tags(10*12) + Next IFD offset(4) = 134
+        int headerSize = 8 + 2 + (numEntries * 12) + 4;
+        writeTag(buf, 273, 4, 1, headerSize);     // StripOffsets
+
         writeTag(buf, 277, 3, 1, 1);              // SamplesPerPixel: 1 (Grayscale)
         writeTag(buf, 278, 4, 1, height);         // RowsPerStrip (One big strip)
         writeTag(buf, 279, 4, 1, dataSize);       // StripByteCounts (Size of image data)
-        // 339 is SampleFormat (3 = IEEE Float)
-        // Java Short is signed, so 339 needs  handling or we can just use putShort
-        buf.putShort((short) 339); buf.putShort((short) 3); buf.putInt(1); buf.putInt(3);
+
+        // CRITICAL FIX: Use your helper method.
+        // Type 3 (SHORT) works fine with putInt(3) because Little Endian
+        // puts the valid data in the first 2 bytes automatically.
+        writeTag(buf, 339, 3, 1, 3);              // SampleFormat: 3 (IEEE Float)
 
         // Offset to next IFD (0 = none)
         buf.putInt(0);

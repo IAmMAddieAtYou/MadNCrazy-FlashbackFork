@@ -38,6 +38,10 @@ public class FilePlayerSkin {
         this.pathToSkin = pathToSkin;
     }
 
+    public String getPath() {
+        return this.pathToSkin;
+    }
+
     public PlayerSkin getSkin() {
         if (this.playerSkin != null) {
             return this.playerSkin;

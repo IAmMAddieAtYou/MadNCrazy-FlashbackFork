@@ -65,13 +65,23 @@ public abstract class MixinAbstractClientPlayer extends Player {
         EditorState editorState = EditorStateManager.getCurrent();
         if (editorState != null) {
             if (PerfectFrames.isCapturingDepth()) {
-                FilePlayerSkin depthSkin = editorState.depthSkinOverrideFromFile.get(this.getUUID());
-                if (depthSkin != null) {
-                    // Return the headless skin
-                    cir.setReturnValue(depthSkin.getSkin());
+                // 1. Check if editorState or the map is missing
+                if (editorState == null || editorState.depthSkinOverrideFromFile == null) {
+
                     return;
                 }
-            }
+
+                FilePlayerSkin depthSkin = editorState.depthSkinOverrideFromFile.get(this.getUUID());
+
+                if (depthSkin != null) {
+
+                    cir.setReturnValue(depthSkin.getSkin());
+                    return;
+                } else {
+                    // 2. This will tell you if the capture is TRUE but the skin is MISSING
+
+                }
+            } else {
                 FilePlayerSkin filePlayerSkin = editorState.skinOverrideFromFile.get(this.getUUID());
                 if (filePlayerSkin != null) {
                     cir.setReturnValue(filePlayerSkin.getSkin());
@@ -79,12 +89,13 @@ public abstract class MixinAbstractClientPlayer extends Player {
                 }
 
 
-            GameProfile skinOverride = editorState.skinOverride.get(this.uuid);
-            if (skinOverride != null) {
-                if (skinOverridePlayerInfo == null || skinOverridePlayerInfo.getProfile() != skinOverride) {
-                    skinOverridePlayerInfo = new PlayerInfo(skinOverride, false);
+                GameProfile skinOverride = editorState.skinOverride.get(this.uuid);
+                if (skinOverride != null) {
+                    if (skinOverridePlayerInfo == null || skinOverridePlayerInfo.getProfile() != skinOverride) {
+                        skinOverridePlayerInfo = new PlayerInfo(skinOverride, false);
+                    }
+                    cir.setReturnValue(skinOverridePlayerInfo.getSkin());
                 }
-                cir.setReturnValue(skinOverridePlayerInfo.getSkin());
             }
         }
     }

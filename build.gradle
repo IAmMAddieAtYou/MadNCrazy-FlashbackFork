@@ -58,6 +58,7 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.1.2")
+	modCompileOnly "maven.modrinth:female-gender:3.2.1+1.21"
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"

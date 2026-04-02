@@ -60,6 +60,7 @@ public class EditorState {
     public Set<UUID> hideCape = new HashSet<>();
     public Set<String> filteredEntities = new HashSet<>();
     public Set<String> filteredParticles = new HashSet<>();
+    public Map<UUID, Float> customEntityScales = new HashMap<>();
 
     public EditorState() {
         this.scenes = new ArrayList<>();

@@ -267,125 +267,74 @@ public class ExportJob {
         System.err.println("Could not find ModelPart with name: " + partName + " in model hierarchy of: " + model.getClass().getName());
         return null;
     }
-
-    public static void captureDepthFrame() {
+    public static void captureDepthFrame(org.joml.Matrix4f projectionMatrix) {
         if (!Flashback.getConfig().depthexport) return;
-
-        // Safety check: Ensure we are in a valid state
         if (!PerfectFrames.isCapturingDepth()) return;
 
-        Window window = Minecraft.getInstance().getWindow();
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget mainTarget = mc.getMainRenderTarget();
+        if (mainTarget == null || !mainTarget.useDepth) return;
 
+        int texW = mainTarget.width;
+        int texH = mainTarget.height;
 
-        int texW = window.getWidth();
-        int texH = window.getHeight();
-
-        if (texW <= 0 || texH <= 0) return;
-
-        // --- MATH SETUP ---
-        float m22 = RenderSystem.getProjectionMatrix().m22();
-
-        int targetW = exportX;
-        int targetH = exportY;
-        float stepX = (float) texW / (float) targetW;
-        float stepY = (float) texH / (float) targetH;
-
-        // --- BUFFER ALLOCATION ---
-        int neededSize = texW * texH;
-        if (rawDepthBuffer == null || rawDepthBuffer.capacity() < neededSize) {
-            rawDepthBuffer = BufferUtils.createFloatBuffer(neededSize);
-            linearDepthBuffer = ByteBuffer.allocateDirect(neededSize * 4);
-            linearDepthBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        // --- BUFFER MGMT ---
+        if (rawDepthBuffer == null || rawDepthBuffer.capacity() < texW * texH) {
+            rawDepthBuffer = org.lwjgl.BufferUtils.createFloatBuffer(texW * texH);
+            linearDepthBuffer = java.nio.ByteBuffer.allocateDirect(exportX * exportY * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
         }
         rawDepthBuffer.clear();
-        linearDepthBuffer.clear();
 
+        // --- HIJACK & READ ---
+        int prevFbo = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_BINDING);
+        org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_READ_FRAMEBUFFER, mainTarget.frameBufferId);
 
-        int oldPackAlignment = GL11.glGetInteger(GL11.GL_PACK_ALIGNMENT);
-        int oldPackRowLength = GL11.glGetInteger(GL11.GL_PACK_ROW_LENGTH);
+        org.lwjgl.opengl.GL11.glReadPixels(0, 0, texW, texH, org.lwjgl.opengl.GL11.GL_DEPTH_COMPONENT, org.lwjgl.opengl.GL11.GL_FLOAT, rawDepthBuffer);
 
-        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 1);
-        GL11.glPixelStorei(GL11.GL_PACK_ROW_LENGTH, 0);
+        org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_READ_FRAMEBUFFER, prevFbo);
 
-        // READ THE DEPTH COMPONENT FROM THE ACTIVE FRAMEBUFFER
-        GL11.glReadPixels(0, 0, texW, texH, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, rawDepthBuffer);
+        // --- MATRIX MATH ---
+        // Calculate the Inverse Projection Matrix once per frame
+        org.joml.Matrix4f invProj = new org.joml.Matrix4f(projectionMatrix).invert();
+        org.joml.Vector4f pos = new org.joml.Vector4f();
 
-        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, oldPackAlignment);
-        GL11.glPixelStorei(GL11.GL_PACK_ROW_LENGTH, oldPackRowLength);
+        float stepX = (float) texW / exportX;
+        float stepY = (float) texH / exportY;
 
-        // --- PROCESSING LOOP ---
+        for (int y = 0; y < exportY; y++) {
+            for (int x = 0; x < exportX; x++) {
+                int srcX = Math.min((int) ((x + 0.5f) * stepX), texW - 1);
+                int srcY = Math.min((int) ((y + 0.5f) * stepY), texH - 1);
+                float z_raw = rawDepthBuffer.get(srcY * texW + srcX);
 
-        int debugCenterX = targetW / 2;
-        int debugCenterY = targetH / 2;
-        boolean doDebugLog = (currenttick % 20 == 0);
+                float depthInMeters;
 
-        boolean isStandardZ = true;
-
-        float near = 0.05f;
-        if (PerfectFrames.worldMatrix != null && PerfectFrames.worldMatrix.m32() > 0.001) {
-
-        }
-
-        float renderDistChunks = (float) Minecraft.getInstance().options.renderDistance().get();
-        float far = renderDistChunks * 16.0f;
-        if (doDebugLog) {
-            System.out.println("--- DEPTH DEBUG FRAME ---");
-            System.out.println("Far Plane Limit: " + far + " meters");
-        }
-        // --- PROCESSING LOOP ---
-        for (int y = 0; y < targetH; y++) {
-            for (int x = 0; x < targetW; x++) {
-
-                // 1. Sample
-                int srcX = (int) ((x + 0.5f) * stepX);
-                int srcY = (int) ((y + 0.5f) * stepY);
-                if (srcX >= texW) srcX = texW - 1;
-                if (srcY >= texH) srcY = texH - 1;
-
-                int srcIndex = srcY * texW + srcX;
-                float z_raw = rawDepthBuffer.get(srcIndex);
-
-
-                float z_linearMeters;
-
-                if (z_raw >= 1.0f) {
-                    z_linearMeters = far;
+                if (z_raw >= 1.0f || z_raw <= 0.000001f) {
+                    depthInMeters = 100000.0f; // Sky/Void
                 } else {
-
+                    // 1. Convert to Normalized Device Coordinates (NDC)
+                    // x and y don't strictly matter for linear Z, but we use 0,0 (center)
                     float z_ndc = z_raw * 2.0f - 1.0f;
-                    z_linearMeters = (2.0f * near * far) / (far + near - z_ndc * (far - near));
+
+                    // 2. Unproject from Clip Space to View Space
+                    pos.set(0, 0, z_ndc, 1.0f);
+                    pos.mul(invProj);
+
+                    // 3. Perspective Division
+                    // In View Space, the Z coordinate is the distance from the camera
+                    // OpenGL View Space is -Z forward, so we negate it.
+                    depthInMeters = -pos.z / pos.w;
                 }
 
-
-                float z_normalized = z_linearMeters / far;
-
-                if (z_normalized > 1.0f) z_normalized = 1.0f;
-                if (z_normalized < 0.0f) z_normalized = 0.0f;
-
-
-
-                int destIndex = ((targetH - 1 - y) * targetW + x) * 4;
-                linearDepthBuffer.putFloat(destIndex, z_normalized);
-
-
-                if (doDebugLog && x == debugCenterX && y == debugCenterY) {
-                    System.out.printf("[CENTER PIXEL] Raw: %.5f | Meters: %.2fm | Final(0-1): %.5f%n",
-                            z_raw, z_linearMeters, z_normalized);
-                }
+                linearDepthBuffer.putFloat(((exportY - 1 - y) * exportX + x) * 4, depthInMeters);
             }
         }
 
-        linearDepthBuffer.position(0);
-        linearDepthBuffer.limit(targetW * targetH * 4);
-
+        linearDepthBuffer.rewind();
         if (depthWriter != null) {
-            org.lwjgl.opengl.GL11.glFinish();
-            depthWriter.encode(linearDepthBuffer, targetW, targetH, currenttick);
+            depthWriter.encode(linearDepthBuffer, exportX, exportY, currenttick);
         }
     }
-
-
-
     public static float getExactFov(EditorScene scene, float currentTick, boolean useHighPrecision, RealTimeMapping mapping) {
         // 1. Find the FOV Track
         KeyframeTrack fovTrack = null;
@@ -568,8 +517,19 @@ public class ExportJob {
                     Map<String, Object> keyframeData = new HashMap<>();
                     keyframeData.put("tick", tickIndex);
 
-                    Vec3 positionVec3 = camera.getPosition();
-                    keyframeData.put("position", new double[]{positionVec3.x, positionVec3.y, positionVec3.z});
+                    Entity camEnt = Minecraft.getInstance().cameraEntity;
+
+                    if (camEnt != null) {
+                        // Manually LERP the position to match the exact moment of the depth capture
+                        double x = camEnt.xo + (camEnt.getX() - camEnt.xo) * partialClientTick;
+                        double y = camEnt.yo + (camEnt.getY() - camEnt.yo) * partialClientTick;
+                        double z = camEnt.zo + (camEnt.getZ() - camEnt.zo) * partialClientTick;
+                        double eyeHeight = camEnt.getEyeHeight();
+                        double finalY = y + eyeHeight;
+                        // Minecraft Y is Blender Z. Minecraft Z is Blender -Y.
+                        // If you want to handle the swap in Java:
+                        keyframeData.put("position", new double[]{x, finalY, z});
+                    }
 
                     // Get rotation (yaw and pitch)
                     keyframeData.put("yaw", camera.getYRot() - replayServer.ShakeY);
@@ -578,8 +538,8 @@ public class ExportJob {
 
 
 
-                    double fov = getExactFov(replayServer.getEditorState().getCurrentScene(replayServer.getEditorState().acquireRead()), (float) currentTickDouble,true,replayServer.getEditorState().realTimeMapping);
-                    keyframeData.put("fov", fov);
+
+                    keyframeData.put("fov", replayServer.getEditorState().replayVisuals.overrideFovAmount);
 
                     allCameraKeyframes.add(keyframeData);
                 }
@@ -739,56 +699,7 @@ public class ExportJob {
         }
 
 
-        if (allCameraKeyframes == null || allCameraKeyframes.size() < 7) {
 
-        } else {
-
-            // --- GAUSSIAN KERNEL CONFIGURATION ---
-            final int KERNEL_RADIUS = 3;
-
-            final float[] GAUSSIAN_KERNEL = {0.006f, 0.061f, 0.242f, 0.383f, 0.242f, 0.061f, 0.006f};
-
-
-            List<Float> originalFovs = new ArrayList<>();
-            for (Map<String, Object> keyframe : allCameraKeyframes) {
-                Object fovObj = keyframe.get("fov");
-                if (fovObj instanceof Number) {
-                    originalFovs.add(((Number) fovObj).floatValue());
-                } else {
-                    originalFovs.add(0.0f); // Default for invalid data
-                }
-            }
-
-            int listSize = originalFovs.size();
-
-            // 2. Apply Gaussian Smoothing (Convolution)
-            for (int i = 0; i < listSize; i++) {
-
-
-                if (i < KERNEL_RADIUS || i >= listSize - KERNEL_RADIUS) {
-                    continue;
-                }
-
-                float newFov = 0.0f;
-
-
-                for (int j = -KERNEL_RADIUS; j <= KERNEL_RADIUS; j++) {
-
-                    // keyframeIndex is the position in the original list
-                    int keyframeIndex = i + j;
-                    // kernelIndex maps j (-3 to 3) to the kernel array index (0 to 6)
-                    int kernelIndex = j + KERNEL_RADIUS;
-
-                    float fovAtNeighbor = originalFovs.get(keyframeIndex);
-                    float weight = GAUSSIAN_KERNEL[kernelIndex];
-
-                    newFov += fovAtNeighbor * weight;
-                }
-
-                // 3. Update the keyframe data with the new smoothed value
-                allCameraKeyframes.get(i).put("fov", newFov);
-            }
-        }
 
         if (Flashback.getConfig().cjson) {
             // Write camera keyframes to JSON file
